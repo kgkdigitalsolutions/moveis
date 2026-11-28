@@ -1,9 +1,11 @@
-const { sb, isAdmin, send } = require('../lib/sb');
+const { sb, readBody, isAdmin, send } = require('../lib/sb');
 const STATUS = ['novo', 'confirmado', 'em_separacao', 'entregue', 'cancelado'];
+
 module.exports = async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
     if (req.method === 'POST') {
-      const b = req.body || {};
+      const b = await readBody(req);
       const name = String(b.name || '').trim(), phone = String(b.phone || '').replace(/\D/g, '');
       if (name.length < 2 || phone.length < 10) return send(res, 400, { error: 'Informe nome e telefone com DDD' });
       if (!Array.isArray(b.items) || !b.items.length || b.items.length > 50) return send(res, 400, { error: 'Carrinho vazio' });
@@ -27,7 +29,7 @@ module.exports = async (req, res) => {
     if (!isAdmin(req)) return send(res, 401, { error: 'Não autorizado' });
     if (req.method === 'GET') return send(res, 200, await sb('orders?select=*&order=created_at.desc&limit=200'));
     if (req.method === 'PATCH') {
-      const { id, status } = req.body || {};
+      const { id, status } = await readBody(req);
       if (!id || !STATUS.includes(status)) return send(res, 400, { error: 'Dados inválidos' });
       const r = await sb(`orders?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: { status } });
       return send(res, 200, r[0] || {});

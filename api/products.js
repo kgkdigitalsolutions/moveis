@@ -1,16 +1,22 @@
-const { sb, isAdmin, send } = require('../lib/sb');
+const { sb, readBody, isAdmin, send } = require('../lib/sb');
 const COLS = 'id,slug,name,category,dims,colors,description,images,price,stock,featured,active';
+
 module.exports = async (req, res) => {
   try {
     if (req.method === 'GET') {
-      const adm = req.query.all === '1' && isAdmin(req);
-      if (!adm) res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
+      const qAll = req.query ? req.query.all : new URL(req.url, 'http://localhost').searchParams.get('all');
+      const adm = qAll === '1' && isAdmin(req);
       const rows = await sb(`products?select=${COLS}${adm ? '' : '&active=eq.true'}&order=category,name&limit=2000`);
+      if (adm) {
+        res.setHeader('Cache-Control', 'no-store');
+      } else {
+        res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
+      }
       return send(res, 200, rows);
     }
     if (req.method === 'PATCH') {
       if (!isAdmin(req)) return send(res, 401, { error: 'Não autorizado' });
-      const { id, ...f } = req.body || {};
+      const { id, ...f } = await readBody(req);
       const ok = {};
       if ('price' in f) ok.price = f.price === '' || f.price === null ? null : Number(f.price);
       if ('stock' in f) ok.stock = f.stock === '' || f.stock === null ? null : parseInt(f.stock, 10);
@@ -23,5 +29,8 @@ module.exports = async (req, res) => {
       return send(res, 200, r[0] || {});
     }
     send(res, 405, { error: 'Método não permitido' });
-  } catch (e) { send(res, 500, { error: String(e.message || e) }); }
+  } catch (e) {
+    res.setHeader('Cache-Control', 'no-store');
+    send(res, 500, { error: String(e.message || e) });
+  }
 };

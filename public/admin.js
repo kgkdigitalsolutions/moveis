@@ -1,20 +1,77 @@
 const $ = (s) => document.querySelector(s), A = $('#app');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const api = async (u, o = {}) => { const r = await fetch(u, { ...o, headers: { 'Content-Type': 'application/json' }, body: o.body ? JSON.stringify(o.body) : undefined }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Erro'); return j; };
+const api = async (u, o = {}) => {
+  const opts = { ...o, credentials: 'same-origin' };
+  if (o.body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json', ...(o.headers || {}) };
+    opts.body = JSON.stringify(o.body);
+  }
+  const r = await fetch(u, opts);
+  const txt = await r.text();
+  let j = {};
+  try { j = txt ? JSON.parse(txt) : {}; } catch (_) {}
+  if (!r.ok) throw new Error(j.error || j.message || `Erro HTTP ${r.status}`);
+  return j;
+};
 let tab = 'p', prods = [], orders = [], f = '';
 const ST = { novo: 'Novo', confirmado: 'Confirmado', em_separacao: 'Em separação', entregue: 'Entregue', cancelado: 'Cancelado' };
 
 function login(msg) {
   $('#out').hidden = true;
-  A.innerHTML = `<div style="max-width:340px;margin:80px auto"><h2 class="serif" style="font-size:34px">Acesso restrito</h2><label>Senha</label><input id="pw" type="password"><div style="color:var(--acc);margin:8px 0">${esc(msg || '')}</div><button class="btn" id="go">Entrar</button></div>`;
-  const go = async () => { try { await api('/api/login', { method: 'POST', body: { password: $('#pw').value } }); start(); } catch (e) { login(e.message); } };
-  $('#go').onclick = go; $('#pw').onkeydown = (e) => e.key === 'Enter' && go();
+  A.innerHTML = `<form id="lf" style="max-width:360px;margin:80px auto">
+    <h2 class="serif" style="font-size:34px">Acesso restrito</h2>
+    <label for="pw">Senha</label>
+    <div style="display:flex;gap:6px">
+      <input id="pw" type="password" autocomplete="current-password" placeholder="Digite a senha">
+      <button class="btn ghost" type="button" id="eye" style="padding:9px 12px;white-space:nowrap">Mostrar</button>
+    </div>
+    <div id="err" style="color:var(--acc);margin:8px 0;min-height:20px">${esc(msg || '')}</div>
+    <button class="btn" id="go" type="submit">Entrar</button>
+  </form>`;
+  const pw = $('#pw'), eye = $('#eye'), err = $('#err'), go = $('#go');
+  pw.focus();
+  eye.onclick = () => {
+    const show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    eye.textContent = show ? 'Ocultar' : 'Mostrar';
+    pw.focus();
+  };
+  $('#lf').onsubmit = async (e) => {
+    e.preventDefault();
+    if (!pw.value) { err.textContent = 'Informe a senha'; pw.focus(); return; }
+    err.textContent = '';
+    go.disabled = true;
+    go.textContent = 'Entrando…';
+    try {
+      await api('/api/login', { method: 'POST', body: { password: pw.value } });
+      await start(true);
+    } catch (er) {
+      err.textContent = er.message || 'Erro ao entrar';
+      go.disabled = false;
+      go.textContent = 'Entrar';
+      pw.focus();
+      pw.select();
+    }
+  };
 }
-async function start() {
-  try { if (!(await api('/api/login')).admin) return login(); } catch (e) { return login(); }
+async function start(afterLogin = false) {
+  try {
+    const st = await api('/api/login');
+    if (!st.admin) {
+      return login(afterLogin ? 'Sessão não persistiu. Verifique se cookies estão habilitados.' : '');
+    }
+  } catch (e) {
+    return login(afterLogin ? e.message : '');
+  }
   $('#out').hidden = false;
-  try { [prods, orders] = await Promise.all([api('/api/products?all=1'), api('/api/orders')]); } catch (e) { A.innerHTML = `<p style="color:var(--acc)">${esc(e.message)}</p>`; return; }
+  try {
+    [prods, orders] = await Promise.all([api('/api/products?all=1'), api('/api/orders')]);
+  } catch (e) {
+    A.innerHTML = `<p style="color:var(--acc)">${esc(e.message)}</p><button class="btn ghost" id="retryAdm">Tentar novamente</button>`;
+    const b = $('#retryAdm'); if (b) b.onclick = () => start();
+    return;
+  }
   draw();
 }
 function draw() {

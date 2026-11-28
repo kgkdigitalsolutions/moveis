@@ -76,12 +76,27 @@ document.addEventListener('click', (e) => {
 });
 $('#q').addEventListener('input', (e) => { term = e.target.value; list(); });
 $('#cartBtn').onclick = () => showCart();
+async function loadCatalog() {
+  $('#grid').innerHTML = '<div class="empty serif">Carregando catálogo…</div>';
+  try {
+    const r = await fetch('/api/products');
+    const txt = await r.text();
+    let data = null;
+    try { data = JSON.parse(txt); } catch (_) {}
+    if (!r.ok || !Array.isArray(data)) {
+      throw new Error((data && (data.error || data.message)) || `Erro HTTP ${r.status}`);
+    }
+    P = data;
+  } catch (e) {
+    $('#grid').innerHTML = `<div class="empty"><div class="serif">Não foi possível carregar o catálogo.</div><div class="mono" style="margin-top:8px">${esc(e.message || 'Erro de conexão')}</div><button class="btn ghost" id="retryCat" style="margin-top:14px">Tentar novamente</button></div>`;
+    const btn = $('#retryCat'); if (btn) btn.onclick = loadCatalog;
+    return;
+  }
+  if (!P.some((p) => p.featured)) cat = 'Todos';
+  rail(); list();
+}
 (async () => {
   save();
   try { cfg = await (await fetch('/api/config')).json(); document.title = cfg.store; $('#brand').textContent = cfg.store; $('#fs').textContent = '© ' + new Date().getFullYear() + ' ' + cfg.store; } catch (e) {}
-  try {
-    const r = await fetch('/api/products'); P = await r.json(); if (!Array.isArray(P)) throw 0;
-  } catch (e) { $('#grid').innerHTML = '<div class="empty serif">Não foi possível carregar o catálogo.</div>'; return; }
-  if (!P.some((p) => p.featured)) cat = 'Todos';
-  rail(); list();
+  await loadCatalog();
 })();
